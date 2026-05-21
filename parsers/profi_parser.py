@@ -11,11 +11,11 @@ from playwright_stealth import Stealth
 
 logger = logging.getLogger(__name__)
 
-PROFI_PATHS = [
-    "/backoffice/n.php",
-    "/zakazy/sozdanie-botov/",
-    "/zakazy/razrabotka-saytov/",
-    "/zakazy/programmirovanie/",
+PROFI_URLS = [
+    "https://profi.ru/backoffice/n.php",
+    "https://profi.ru/zakazy/sozdanie-botov/",
+    "https://profi.ru/zakazy/razrabotka-saytov/",
+    "https://profi.ru/zakazy/programmirovanie/",
 ]
 
 # Маппинг sameSite из формата Cookie-Editor в формат Playwright.
@@ -123,23 +123,6 @@ def _load_cookies() -> list[dict] | None:
         return None
 
 
-def _detect_region(cookies: list[dict]) -> str:
-    """Возвращает региональный префикс ('nsk.', 'msk.', '...') или '' если только корневой домен."""
-    for c in cookies or []:
-        d = (c.get("domain") or "").lstrip(".")
-        if not d.endswith(".profi.ru"):
-            continue
-        sub = d[: -len(".profi.ru")]
-        if sub and sub not in ("www",) and "." not in sub:
-            return sub + "."
-    return ""
-
-
-def _build_urls(cookies: list[dict]) -> list[str]:
-    region = _detect_region(cookies)
-    return [f"https://{region}profi.ru{path}" for path in PROFI_PATHS]
-
-
 def _looks_like_login_page(url: str, title: str) -> bool:
     u = (url or "").lower()
     t = (title or "").lower()
@@ -171,9 +154,7 @@ async def fetch_profi_tasks() -> list[dict[str, Any]]:
                         logger.error("Profi.ru: add_cookies упал: %s", e)
                 page = await context.new_page()
 
-                urls = _build_urls(cookies or [])
-                logger.info("Profi.ru: используем URLs: %s", urls[0])
-                for url in urls:
+                for url in PROFI_URLS:
                     try:
                         await page.goto(url, timeout=45000, wait_until="domcontentloaded")
                         final_url = page.url
