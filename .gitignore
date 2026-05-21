@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+database/*.db
+database/*.db-journal
+parsers/profi_cookies.json
+scripts/dumps/
+*.log
+.claude/
+.idea/
+.vscode/

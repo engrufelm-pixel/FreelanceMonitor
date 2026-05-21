@@ -1,0 +1,7 @@
+aiogram>=3.13.0
+openai>=1.50.0
+aiosqlite>=0.20.0
+playwright>=1.45.0
+playwright-stealth>=1.0.6
+python-dotenv>=1.0.0
+feedparser>=6.0.10
