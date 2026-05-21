@@ -60,7 +60,6 @@ def format_run_stats(stats: dict) -> str:
         f"🟡 В дайджест:   <b>{stats.get('digest', 0)}</b>\n"
         f"🔴 Скрыто:       <b>{stats.get('hidden', 0)}</b>\n"
         f"♻️ Дубликатов:   <b>{stats.get('duplicate', 0)}</b>\n"
-        f"💰 Низкий бюджет: <b>{stats.get('low_budget', 0)}</b>\n"
         f"⚠️ Ошибок:       <b>{stats.get('error', 0)}</b>"
     )
 
@@ -97,11 +96,12 @@ async def _collect_tasks() -> list[dict]:
 
 
 async def _process_task(bot: Bot, admin_id: int, task: dict, min_budget: int) -> str:
-    """Обрабатывает одну задачу: антидубль → AI-скор → маршрут. Возвращает статус-метку."""
-    # Бюджетный отсев — только если бюджет известен и явно ниже порога
+    """Обрабатывает одну задачу: антидубль → AI-скор → маршрут. Возвращает статус-метку.
+
+    Бюджетный отсев отключён: даже задачи с маленьким бюджетом идут к AI,
+    решение принимает только score (≥60 пуш, 40–59 дайджест, <40 скрыто).
+    """
     budget = int(task.get("budget") or 0)
-    if min_budget > 0 and 0 < budget < min_budget:
-        return "low_budget"
 
     if await is_duplicate(task["url"], task["title"], budget):
         return "duplicate"
