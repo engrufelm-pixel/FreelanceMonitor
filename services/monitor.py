@@ -87,12 +87,21 @@ async def _run_one_fetcher(fetcher: Fetcher) -> list[dict]:
 async def _collect_tasks() -> list[dict]:
     """Опрашивает все парсеры последовательно с межпарсерной паузой."""
     all_tasks: list[dict] = []
+    per_source: dict[str, int] = {}
     for i, fetcher in enumerate(FETCHERS):
         if i > 0:
             await asyncio.sleep(random.uniform(*INTER_FETCHER_DELAY))
         tasks = await _run_one_fetcher(fetcher)
+        # Считаем по source. У всех парсеров одинаковое имя источника во всех записях.
+        src = tasks[0].get("source", fetcher.__name__) if tasks else fetcher.__name__
+        per_source[src] = per_source.get(src, 0) + len(tasks)
         all_tasks.extend(tasks)
+    logger.info("Парсеры вернули: %s", per_source)
     return all_tasks
+
+
+# Глобальный лок: фоновый monitor_loop и ручной /check не запускаются параллельно
+_run_lock = asyncio.Lock()
 
 
 async def _process_task(bot: Bot, admin_id: int, task: dict, min_budget: int) -> str:
@@ -195,27 +204,36 @@ def _pluralize(n: int) -> str:
     return "задач"
 
 
+def is_check_running() -> bool:
+    return _run_lock.locked()
+
+
 async def run_check(bot: Bot, admin_id: int) -> dict:
-    """Один проход: собрать задачи → отфильтровать → разослать. Возвращает статистику."""
-    stats = {
-        "fetched": 0, "sent": 0, "digest": 0, "hidden": 0,
-        "duplicate": 0, "low_budget": 0, "error": 0,
-    }
+    """Один проход: собрать задачи → отфильтровать → разослать. Возвращает статистику.
 
-    all_tasks = await _collect_tasks()
-    stats["fetched"] = len(all_tasks)
+    Защищён глобальным локом — параллельные вызовы (ручная кнопка + фоновый цикл)
+    выстраиваются в очередь, а не дублируют запросы к биржам.
+    """
+    async with _run_lock:
+        stats = {
+            "fetched": 0, "sent": 0, "digest": 0, "hidden": 0,
+            "duplicate": 0, "error": 0,
+        }
 
-    for t in all_tasks:
-        try:
-            result = await _process_task(bot, admin_id, t, DEFAULT_MIN_BUDGET)
-            stats[result] = stats.get(result, 0) + 1
-            await asyncio.sleep(0.5)  # лимит Telegram + лимит AITunnel
-        except Exception as e:
-            logger.error("Сбой обработки задачи %s: %s", t.get("url"), e, exc_info=True)
-            stats["error"] += 1
+        all_tasks = await _collect_tasks()
+        stats["fetched"] = len(all_tasks)
 
-    logger.info("Проверка завершена: %s", stats)
-    return stats
+        for t in all_tasks:
+            try:
+                result = await _process_task(bot, admin_id, t, DEFAULT_MIN_BUDGET)
+                stats[result] = stats.get(result, 0) + 1
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error("Сбой обработки %s: %s", t.get("url"), e, exc_info=True)
+                stats["error"] += 1
+
+        logger.info("Проверка завершена: %s", stats)
+        return stats
 
 
 async def monitor_loop(bot: Bot, admin_id: int) -> None:

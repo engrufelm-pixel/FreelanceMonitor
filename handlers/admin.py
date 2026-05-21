@@ -17,7 +17,7 @@ from aiogram.types import (
 from config import ADMIN_ID
 from database.db_utils import clear_all, get_stats
 from parsers.profi_parser import COOKIES_FILE
-from services.monitor import format_run_stats, run_check
+from services.monitor import format_run_stats, is_check_running, run_check
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,6 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
 )
 
 DIVIDER = "─────────────────────────"
-
-# Лок, чтобы кнопка «Проверить биржи» не запускала второй прогон поверх первого
-_check_lock = asyncio.Lock()
-
 
 def _is_admin(user_id: int | None) -> bool:
     return user_id == ADMIN_ID
@@ -114,8 +110,8 @@ async def on_check_now(message: Message, bot: Bot) -> None:
     if not _is_admin(message.from_user.id if message.from_user else None):
         return
 
-    if _check_lock.locked():
-        await message.answer("⏳ Проверка уже идёт, дождись её завершения.")
+    if is_check_running():
+        await message.answer("⏳ Проверка уже идёт (возможно фоновая), дождись её завершения.")
         return
 
     await message.answer(
@@ -124,13 +120,12 @@ async def on_check_now(message: Message, bot: Bot) -> None:
     )
 
     async def _runner():
-        async with _check_lock:
-            try:
-                stats = await run_check(bot, ADMIN_ID)
-                await bot.send_message(ADMIN_ID, format_run_stats(stats))
-            except Exception as e:
-                logger.exception("Ручная проверка упала")
-                await bot.send_message(ADMIN_ID, f"⚠️ Сбой проверки: {e}")
+        try:
+            stats = await run_check(bot, ADMIN_ID)
+            await bot.send_message(ADMIN_ID, format_run_stats(stats))
+        except Exception as e:
+            logger.exception("Ручная проверка упала")
+            await bot.send_message(ADMIN_ID, f"⚠️ Сбой проверки: {e}")
 
     asyncio.create_task(_runner())
 
